@@ -17,16 +17,15 @@ class NotificationManager implements Serializable {
             String message = buildSlackMessage(status, emoji, details)
 
             script.slackSend(
-                channel    : '#jenkins-notifications',
-                color      : color,
-                message    : message,
+                channel          : '#jenkins-notifications',
+                color            : color,
+                message          : message,
                 tokenCredentialId: 'slack-token'
             )
 
             script.echo "Slack notification sent: ${status}"
 
         } catch (Exception e) {
-            // graceful failure — notification fail hone se pipeline fail nahi hogi
             script.echo "WARNING: Slack notification failed: ${e.message}"
         }
     }
@@ -39,11 +38,11 @@ class NotificationManager implements Serializable {
             String body    = buildEmailBody(status, details)
 
             script.emailext(
-                subject     : subject,
-                body        : body,
-                mimeType    : 'text/html',
-                to          : details.recipients ?: 'YOUR_EMAIL@gmail.com',
-                attachLog   : status == 'FAILURE'   // failure pe log attach karo
+                subject  : subject,
+                body     : body,
+                mimeType : 'text/html',
+                to       : details.recipients ?: 'YOUR_EMAIL@gmail.com',
+                attachLog: status == 'FAILURE'
             )
 
             script.echo "Email notification sent: ${status}"
@@ -61,11 +60,10 @@ class NotificationManager implements Serializable {
             String emoji   = getEmoji(status)
             String message = buildTeamsMessage(status, emoji, details)
 
-            // Teams webhook call
             script.withCredentials([
                 script.string(
                     credentialsId: 'teams-webhook',
-                    variable: 'TEAMS_URL'
+                    variable     : 'TEAMS_URL'
                 )
             ]) {
                 script.sh("""
@@ -92,16 +90,29 @@ class NotificationManager implements Serializable {
 
     // ── PRIVATE — MESSAGE BUILDERS ────────────────────────────
 
+    // CHANGE 1: Artifacts, Tests, Coverage links add kiye
     private String buildSlackMessage(String status, String emoji, Map d) {
+
+        // Links build karo
+        String buildUrl      = d.buildUrl      ?: 'http://localhost:8080'
+        String artifactsUrl  = d.artifactsUrl  ?: "${buildUrl}artifact/${d.service}/tests/reports/test-report.pdf"
+        String testsUrl      = d.testsUrl      ?: "${buildUrl}testReport/"
+        String coverageUrl   = d.coverageUrl   ?: "${buildUrl}Coverage_20Report/"
+
         return """
 ${emoji} *${status}: ${d.jobName} #${d.buildNumber}*
-> *Branch*    : ${d.branch}
-> *Service*   : ${d.service}
-> *Version*   : ${d.version}
-> *Env*       : ${d.environment}
-> *Duration*  : ${d.duration}
-> *Changes*   : ${d.changes}
-> *Build URL* : ${d.buildUrl}
+> *Branch*      : ${d.branch}
+> *Service*     : ${d.service}
+> *Version*     : ${d.version}
+> *Env*         : ${d.environment}
+> *Duration*    : ${d.duration}
+> *Changes*     : ${d.changes}
+
+*Quick Links:*
+> <${buildUrl}|🔗 View Build Page>
+> <${testsUrl}|📊 Test Results>
+> <${coverageUrl}|📈 Coverage Report>
+> <${artifactsUrl}|📄 Download PDF Report>
         """.trim()
     }
 
@@ -110,13 +121,22 @@ ${emoji} *${status}: ${d.jobName} #${d.buildNumber}*
         return "${emoji} ${status}: ${d.jobName} #${d.buildNumber} [${d.branch}]"
     }
 
+    // CHANGE 2: 4 action buttons add kiye email mein
     private String buildEmailBody(String status, Map d) {
         String color = getHtmlColor(status)
+
+        // Links build karo
+        String buildUrl     = d.buildUrl     ?: 'http://localhost:8080'
+        String artifactsUrl = d.artifactsUrl ?: "${buildUrl}artifact/${d.service}/tests/reports/test-report.pdf"
+        String testsUrl     = d.testsUrl     ?: "${buildUrl}testReport/"
+        String coverageUrl  = d.coverageUrl  ?: "${buildUrl}Coverage_20Report/"
+
         return """
 <!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; margin: 0; padding: 20px;">
 
+  <!-- Header -->
   <div style="background-color: ${color};
               padding: 15px;
               border-radius: 8px;
@@ -126,55 +146,96 @@ ${emoji} *${status}: ${d.jobName} #${d.buildNumber}*
     </h2>
   </div>
 
-  <table style="width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 20px;">
-    <tr style="background-color: #f2f2f2;">
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Job Name</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.jobName}</td>
+  <!-- Build Details Table -->
+  <table style="width:100%;
+                border-collapse:collapse;
+                margin-bottom:20px;">
+    <tr style="background-color:#f2f2f2;">
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold; width:30%;">Job Name</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.jobName}</td>
     </tr>
     <tr>
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Build Number</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">#${d.buildNumber}</td>
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Build Number</td>
+      <td style="padding:10px; border:1px solid #ddd;">#${d.buildNumber}</td>
     </tr>
-    <tr style="background-color: #f2f2f2;">
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Branch</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.branch}</td>
-    </tr>
-    <tr>
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Service</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.service}</td>
-    </tr>
-    <tr style="background-color: #f2f2f2;">
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Version</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.version}</td>
+    <tr style="background-color:#f2f2f2;">
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Branch</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.branch}</td>
     </tr>
     <tr>
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Environment</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.environment}</td>
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Service</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.service}</td>
     </tr>
-    <tr style="background-color: #f2f2f2;">
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Duration</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.duration}</td>
+    <tr style="background-color:#f2f2f2;">
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Version</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.version}</td>
     </tr>
     <tr>
-      <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Changes</td>
-      <td style="padding: 10px; border: 1px solid #ddd;">${d.changes}</td>
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Environment</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.environment}</td>
+    </tr>
+    <tr style="background-color:#f2f2f2;">
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Duration</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.duration}</td>
+    </tr>
+    <tr>
+      <td style="padding:10px; border:1px solid #ddd; font-weight:bold;">Changes</td>
+      <td style="padding:10px; border:1px solid #ddd;">${d.changes}</td>
     </tr>
   </table>
 
-  <div style="margin-bottom: 20px;">
-    <a href="${d.buildUrl}"
-       style="background-color: #0066cc;
-              color: white;
-              padding: 10px 20px;
-              text-decoration: none;
-              border-radius: 5px;">
-      View Build Logs
-    </a>
-  </div>
+  <!-- CHANGE 2: 4 Action Buttons -->
+  <p style="font-weight:bold; margin-bottom:10px;">Quick Links:</p>
+  <table style="margin-bottom:20px;">
+    <tr>
+      <td style="padding:5px;">
+        <a href="${buildUrl}"
+           style="background-color:#0066cc;
+                  color:white;
+                  padding:10px 15px;
+                  text-decoration:none;
+                  border-radius:5px;
+                  display:inline-block;">
+          🔗 View Build
+        </a>
+      </td>
+      <td style="padding:5px;">
+        <a href="${testsUrl}"
+           style="background-color:#28a745;
+                  color:white;
+                  padding:10px 15px;
+                  text-decoration:none;
+                  border-radius:5px;
+                  display:inline-block;">
+          📊 Test Results
+        </a>
+      </td>
+      <td style="padding:5px;">
+        <a href="${coverageUrl}"
+           style="background-color:#6f42c1;
+                  color:white;
+                  padding:10px 15px;
+                  text-decoration:none;
+                  border-radius:5px;
+                  display:inline-block;">
+          📈 Coverage
+        </a>
+      </td>
+      <td style="padding:5px;">
+        <a href="${artifactsUrl}"
+           style="background-color:#fd7e14;
+                  color:white;
+                  padding:10px 15px;
+                  text-decoration:none;
+                  border-radius:5px;
+                  display:inline-block;">
+          📄 PDF Report
+        </a>
+      </td>
+    </tr>
+  </table>
 
-  <p style="color: #666; font-size: 12px;">
+  <p style="color:#666; font-size:12px;">
     This is an automated notification from Jenkins CI/CD Pipeline.
   </p>
 
@@ -183,8 +244,16 @@ ${emoji} *${status}: ${d.jobName} #${d.buildNumber}*
         """.trim()
     }
 
+    // CHANGE 3: 4 action buttons add kiye Teams mein
     private String buildTeamsMessage(String status, String emoji, Map d) {
         String color = getTeamsColor(status)
+
+        // Links build karo
+        String buildUrl     = d.buildUrl     ?: 'http://localhost:8080'
+        String artifactsUrl = d.artifactsUrl ?: "${buildUrl}artifact/${d.service}/tests/reports/test-report.pdf"
+        String testsUrl     = d.testsUrl     ?: "${buildUrl}testReport/"
+        String coverageUrl  = d.coverageUrl  ?: "${buildUrl}Coverage_20Report/"
+
         return """
 {
     "@type": "MessageCard",
@@ -203,16 +272,34 @@ ${emoji} *${status}: ${d.jobName} #${d.buildNumber}*
         ],
         "markdown": true
     }],
-    "potentialAction": [{
-        "@type": "OpenUri",
-        "name": "View Build",
-        "targets": [{"os": "default", "uri": "${d.buildUrl}"}]
-    }]
+    "potentialAction": [
+        {
+            "@type": "OpenUri",
+            "name": "🔗 View Build",
+            "targets": [{"os": "default", "uri": "${buildUrl}"}]
+        },
+        {
+            "@type": "OpenUri",
+            "name": "📊 Test Results",
+            "targets": [{"os": "default", "uri": "${testsUrl}"}]
+        },
+        {
+            "@type": "OpenUri",
+            "name": "📈 Coverage Report",
+            "targets": [{"os": "default", "uri": "${coverageUrl}"}]
+        },
+        {
+            "@type": "OpenUri",
+            "name": "📄 PDF Report",
+            "targets": [{"os": "default", "uri": "${artifactsUrl}"}]
+        }
+    ]
 }
         """.trim()
     }
 
     // ── PRIVATE — HELPERS ─────────────────────────────────────
+    // NO CHANGE — same rakha
 
     private String getColor(String status) {
         switch(status) {
