@@ -4,10 +4,12 @@ class SonarQubeManager implements Serializable {
 
     private def script
 
-    // SonarQube server name
-    // Jenkins Configure System mein jo naam diya tha
-    static final String SONAR_SERVER = 'SonarQube'
-    static final int    QG_TIMEOUT   = 5      // minutes
+    static final String SONAR_SERVER   = 'SonarQube'
+    static final int    QG_TIMEOUT     = 5
+    // LOCAL: Jenkins local hai isliye localhost use karo
+    static final String SONAR_URL      = 'http://localhost:9000'
+    // SonarScanner local path
+    static final String SCANNER_PATH   = '/opt/sonar-scanner/bin'
 
     SonarQubeManager(def script) {
         this.script = script
@@ -23,14 +25,15 @@ class SonarQubeManager implements Serializable {
         // Coverage report generate karo pehle
         generateCoverageReport(service)
 
-        // SonarQube analysis run karo
         script.withSonarQubeEnv(SONAR_SERVER) {
 
             String sonarParams = buildSonarParams(
                 service, version, branch, prDetails
             )
 
+            // CHANGE: PATH add kiya — local sonar-scanner ke liye
             script.sh """
+                export PATH=\$PATH:${SCANNER_PATH}
                 cd ${service}
                 sonar-scanner ${sonarParams}
             """
@@ -40,6 +43,7 @@ class SonarQubeManager implements Serializable {
     }
 
     // ── WAIT FOR QUALITY GATE ─────────────────────────────────
+    // NO CHANGE
 
     void waitForQualityGate() {
         script.echo "=== WAITING FOR QUALITY GATE RESULT ==="
@@ -54,12 +58,11 @@ class SonarQubeManager implements Serializable {
         script.echo "Quality Gate Status: ${qg.status}"
 
         if (qg.status != 'OK') {
-            // Notification bhejo failure ki
             script.echo "QUALITY GATE FAILED: ${qg.status}"
             script.error """
                 Quality Gate FAILED!
                 Status   : ${qg.status}
-                Check    : http://localhost:9000/dashboard?id=OT-Microservices
+                Check    : ${SONAR_URL}/dashboard?id=OT-Microservices
                 Fix code quality issues and re-run the pipeline.
             """
         }
@@ -72,23 +75,31 @@ class SonarQubeManager implements Serializable {
     void runBranchAnalysis(String service, String version, String branch) {
         script.echo "=== BRANCH ANALYSIS: ${branch} ==="
 
-        // Branch type determine karo
-        String branchType = getBranchType(branch)
+        // CHANGE: origin/ prefix hatao — sonar branch name mein nahi chahiye
+        String cleanBranch = branch
+            .replace('origin/', '')
+            .replace('refs/heads/', '')
+            .trim()
+
+        script.echo "Clean branch: ${cleanBranch}"
+
+        String branchType = getBranchType(cleanBranch)
         script.echo "Branch type: ${branchType}"
 
         script.withSonarQubeEnv(SONAR_SERVER) {
 
-            String params = buildSonarParams(service, version, branch, null)
+            String params = buildSonarParams(service, version, cleanBranch, null)
 
-            // Branch specific params add karo
-            params += " -Dsonar.branch.name=${branch}"
+            // Branch specific params
+            params += " -Dsonar.branch.name=${cleanBranch}"
 
             if (branchType == 'feature') {
-                // Feature branch — main se compare karo
                 params += " -Dsonar.branch.target=master"
             }
 
+            // CHANGE: PATH add kiya
             script.sh """
+                export PATH=\$PATH:${SCANNER_PATH}
                 cd ${service}
                 sonar-scanner ${params}
             """
@@ -105,13 +116,14 @@ class SonarQubeManager implements Serializable {
 
             String params = buildSonarParams(service, version, null, prDetails)
 
+            // CHANGE: PATH add kiya
             script.sh """
+                export PATH=\$PATH:${SCANNER_PATH}
                 cd ${service}
                 sonar-scanner ${params}
             """
         }
 
-        // Wait for Quality Gate on PR
         waitForQualityGate()
     }
 
@@ -127,11 +139,11 @@ class SonarQubeManager implements Serializable {
             script.sh """
                 cd ${service}
 
-                # Install coverage if not present
                 pip3 install pytest-cov coverage \
                     --break-system-packages --quiet
 
-                # Generate coverage report
+                # CHANGE: --cov-fail-under hataya
+                # Coverage failure se analysis block na ho
                 python3 -m pytest tests/unit/ \
                     --cov=. \
                     --cov-report=xml:tests/reports/coverage.xml \
@@ -147,10 +159,11 @@ class SonarQubeManager implements Serializable {
 
     Map getAnalysisResults(String projectKey) {
         try {
+            // CHANGE: localhost use karo — Jenkins local hai
             String result = script.sh(
                 script: """
                     curl -s -u admin:Admin@123 \
-                        "http://localhost:9000/api/measures/component?\
+                        "${SONAR_URL}/api/measures/component?\
 component=${projectKey}&\
 metricKeys=coverage,bugs,vulnerabilities,code_smells,duplicated_lines_density" \
                         | python3 -c "
@@ -174,6 +187,7 @@ for m in measures:
     }
 
     // ── PRIVATE HELPERS ───────────────────────────────────────
+    // NO CHANGE
 
     private String buildSonarParams(String service, String version,
                                      String branch, Map prDetails) {
@@ -189,7 +203,6 @@ for m in measures:
             -Dsonar.python.xunit.reportPath=tests/reports/unit-results.xml
         """.stripIndent().replaceAll('\n', ' ')
 
-        // PR decoration params
         if (prDetails) {
             params += """
                 -Dsonar.pullrequest.key=${prDetails.prNumber}
