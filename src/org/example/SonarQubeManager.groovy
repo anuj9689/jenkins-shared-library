@@ -90,14 +90,9 @@ class SonarQubeManager implements Serializable {
 
             String params = buildSonarParams(service, version, cleanBranch, null)
 
-            // Branch specific params
-            params += " -Dsonar.branch.name=${cleanBranch}"
+            // FIXED: sonar.branch.name REMOVED — Community Edition support nahi karta
+            // FIXED: sonar.branch.target REMOVED — Community Edition support nahi karta
 
-            if (branchType == 'feature') {
-                params += " -Dsonar.branch.target=master"
-            }
-
-            // CHANGE: PATH add kiya
             script.sh """
                 export PATH=\$PATH:${SCANNER_PATH}
                 cd ${service}
