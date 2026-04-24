@@ -5,7 +5,7 @@ class SonarQubeManager implements Serializable {
     private def script
 
     static final String SONAR_SERVER   = 'SonarQube'
-    static final int    QG_TIMEOUT     = 5
+    static final int    QG_TIMEOUT     = 10
     // LOCAL: Jenkins local hai isliye localhost use karo
     static final String SONAR_URL      = 'http://localhost:9000'
     // SonarScanner local path
