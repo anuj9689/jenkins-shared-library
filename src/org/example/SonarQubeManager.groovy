@@ -52,7 +52,7 @@ class SonarQubeManager implements Serializable {
         def qg = null
 
         script.timeout(time: QG_TIMEOUT, unit: 'MINUTES') {
-            qg = script.waitForQualityGate()
+            qg = script.waitForQualityGate(abortPipeline: false)
         }
 
         script.echo "Quality Gate Status: ${qg.status}"
